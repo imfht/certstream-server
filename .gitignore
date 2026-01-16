@@ -27,3 +27,9 @@ erl_crash.dump
 *.iml
 
 frontend/node_modules
+
+# Rust build artifacts
+/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
