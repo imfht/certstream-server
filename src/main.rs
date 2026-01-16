@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{info, Level};
+use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod certificate_buffer;
@@ -40,10 +40,16 @@ async fn main() -> Result<()> {
     // Wait for both tasks
     tokio::select! {
         result = watchers => {
-            result?;
+            match result {
+                Ok(()) => warn!("CT watcher task exited unexpectedly."),
+                Err(err) => error!("CT watcher task exited: {}", err),
+            }
         }
         result = web_server => {
-            result?;
+            match result {
+                Ok(()) => warn!("Web server exited unexpectedly."),
+                Err(err) => error!("Web server exited: {}", err),
+            }
         }
     }
 

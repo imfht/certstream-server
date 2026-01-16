@@ -20,13 +20,51 @@ pub async fn start_watchers(
         .timeout(Duration::from_secs(10))
         .build()?;
 
-    let log_list: CTLogList = client
-        .get(CT_LOG_LIST_URL)
-        .header("User-Agent", get_user_agent())
-        .send()
-        .await?
-        .json()
-        .await?;
+    let mut log_list_retries = 0;
+    let log_list: CTLogList = loop {
+        match client
+            .get(CT_LOG_LIST_URL)
+            .header("User-Agent", get_user_agent())
+            .send()
+            .await
+        {
+            Ok(response) => match response.json().await {
+                Ok(log_list) => break log_list,
+                Err(e) => {
+                    log_list_retries += 1;
+                    if log_list_retries >= MAX_INIT_RETRIES {
+                        warn!(
+                            "Failed to parse CT log list after {} attempts: {}. Will keep retrying every {} seconds...",
+                            MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                        );
+                        log_list_retries = 0;
+                    } else {
+                        warn!(
+                            "Failed to parse CT log list (attempt {}/{}): {}. Retrying in {} seconds...",
+                            log_list_retries, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                        );
+                    }
+                }
+            },
+            Err(e) => {
+                log_list_retries += 1;
+                if log_list_retries >= MAX_INIT_RETRIES {
+                    warn!(
+                        "Failed to fetch CT log list after {} attempts: {}. Will keep retrying every {} seconds...",
+                        MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                    );
+                    log_list_retries = 0;
+                } else {
+                    warn!(
+                        "Failed to fetch CT log list (attempt {}/{}): {}. Retrying in {} seconds...",
+                        log_list_retries, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                    );
+                }
+            }
+        }
+
+        sleep(Duration::from_secs(INIT_RETRY_DELAY_SECS)).await;
+    };
 
     let mut handles = Vec::new();
 
@@ -114,15 +152,16 @@ async fn watch_ct_log(
                 retries += 1;
                 if retries >= MAX_INIT_RETRIES {
                     warn!(
-                        "Failed to get initial tree size for {} after {} retries: {}. Skipping this log.",
-                        url, MAX_INIT_RETRIES, e
+                        "Failed to get initial tree size for {} after {} retries: {}. Will keep retrying every {} seconds...",
+                        url, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
                     );
-                    return Err(e);
+                    retries = 0;
+                } else {
+                    warn!(
+                        "Failed to get initial tree size for {} (attempt {}/{}): {}. Retrying in {} seconds...",
+                        url, retries, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                    );
                 }
-                warn!(
-                    "Failed to get initial tree size for {} (attempt {}/{}): {}. Retrying in {} seconds...",
-                    url, retries, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
-                );
                 sleep(Duration::from_secs(INIT_RETRY_DELAY_SECS)).await;
             }
         }
