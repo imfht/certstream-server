@@ -1,4 +1,6 @@
 use anyhow::Result;
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -31,25 +33,44 @@ async fn main() -> Result<()> {
     let certificate_buffer = certificate_buffer::CertificateBuffer::new();
     let client_manager = client_manager::ClientManager::new();
 
-    // Start CT log watchers
-    let watchers = ct_watcher::start_watchers(client_manager.clone(), certificate_buffer.clone());
+    // Start CT log watchers (restart on unexpected exit)
+    let watcher_supervisor = tokio::spawn({
+        let client_manager = client_manager.clone();
+        let certificate_buffer = certificate_buffer.clone();
+        async move {
+            loop {
+                match ct_watcher::start_watchers(client_manager.clone(), certificate_buffer.clone())
+                    .await
+                {
+                    Ok(()) => warn!(
+                        "CT watcher task exited unexpectedly. Restarting in {} seconds...",
+                        config::INIT_RETRY_DELAY_SECS
+                    ),
+                    Err(err) => error!(
+                        "CT watcher task exited: {}. Restarting in {} seconds...",
+                        err,
+                        config::INIT_RETRY_DELAY_SECS
+                    ),
+                }
+
+                sleep(Duration::from_secs(config::INIT_RETRY_DELAY_SECS)).await;
+            }
+        }
+    });
 
     // Start web server
     let web_server = web_server::start_server(client_manager.clone(), certificate_buffer.clone());
 
-    // Wait for both tasks
+    // Wait for the web server (watcher supervisor should run indefinitely)
     tokio::select! {
-        result = watchers => {
-            match result {
-                Ok(()) => warn!("CT watcher task exited unexpectedly."),
-                Err(err) => error!("CT watcher task exited: {}", err),
-            }
-        }
         result = web_server => {
             match result {
                 Ok(()) => warn!("Web server exited unexpectedly."),
                 Err(err) => error!("Web server exited: {}", err),
             }
+        }
+        _ = watcher_supervisor => {
+            warn!("CT watcher supervisor exited unexpectedly.");
         }
     }
 
