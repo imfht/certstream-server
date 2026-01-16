@@ -75,6 +75,7 @@ Configure the server using environment variables:
 
 - `PORT` - HTTP server port (default: 4000)
 - `LOG_LEVEL` - Logging level: trace, debug, info, warn, error (default: info)
+- Logs are written to stdout/stderr. Increase `LOG_LEVEL` for more detail, and check for shutdown messages if the server stops unexpectedly.
 - `USER_AGENT` - Custom user agent for CT log requests (default: "Certstream Server v{VERSION}")
 - `STATS_URL` - Custom stats endpoint path (default: "stats")
 
