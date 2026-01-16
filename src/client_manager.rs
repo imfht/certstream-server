@@ -8,8 +8,8 @@ pub type ClientId = usize;
 
 #[derive(Clone)]
 pub enum StreamType {
-    Lite,      // Default - no DER, no chain
-    Full,      // Full stream with DER and chain
+    Lite,        // Default - no DER, no chain
+    Full,        // Full stream with DER and chain
     DomainsOnly, // Only domain names
 }
 
@@ -32,8 +32,13 @@ impl ClientManager {
         })
     }
 
-    pub fn add_client(&self, stream_type: StreamType) -> (ClientId, mpsc::UnboundedReceiver<String>) {
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    pub fn add_client(
+        &self,
+        stream_type: StreamType,
+    ) -> (ClientId, mpsc::UnboundedReceiver<String>) {
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (tx, rx) = mpsc::unbounded_channel();
 
         let client = ClientInfo {
@@ -43,14 +48,22 @@ impl ClientManager {
         };
 
         self.clients.insert(id, client);
-        info!("Client {} connected. Total clients: {}", id, self.clients.len());
+        info!(
+            "Client {} connected. Total clients: {}",
+            id,
+            self.clients.len()
+        );
 
         (id, rx)
     }
 
     pub fn remove_client(&self, id: ClientId) {
         self.clients.remove(&id);
-        info!("Client {} disconnected. Total clients: {}", id, self.clients.len());
+        info!(
+            "Client {} disconnected. Total clients: {}",
+            id,
+            self.clients.len()
+        );
     }
 
     pub fn get_client_count(&self) -> usize {
@@ -58,7 +71,11 @@ impl ClientManager {
     }
 
     pub async fn broadcast_certificates(&self, certs: &[CertificateData]) {
-        debug!("Broadcasting {} certificates to {} clients", certs.len(), self.clients.len());
+        debug!(
+            "Broadcasting {} certificates to {} clients",
+            certs.len(),
+            self.clients.len()
+        );
 
         // Prepare different versions
         let full_updates: Vec<String> = certs
@@ -117,7 +134,7 @@ impl ClientManager {
 
     pub fn get_clients_info(&self) -> serde_json::Value {
         let mut clients_map = serde_json::Map::new();
-        
+
         for entry in self.clients.iter() {
             let client = entry.value();
             let stream_type = match client.stream_type {

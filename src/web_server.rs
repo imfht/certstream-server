@@ -14,11 +14,7 @@ use axum::{
 };
 use futures::{sink::SinkExt, stream::StreamExt};
 use std::sync::Arc;
-use tower_http::{
-    cors::CorsLayer,
-    services::ServeDir,
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 use tracing::{debug, info};
 
 #[derive(Clone)]
@@ -53,9 +49,9 @@ pub async fn start_server(
 
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
+
     info!("Server listening on {}", addr);
-    
+
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -90,11 +86,7 @@ async fn domains_only_handler(
     ws.on_upgrade(|socket| handle_websocket(socket, state, StreamType::DomainsOnly))
 }
 
-async fn handle_websocket(
-    socket: WebSocket,
-    state: AppState,
-    stream_type: StreamType,
-) {
+async fn handle_websocket(socket: WebSocket, state: AppState, stream_type: StreamType) {
     let (mut sender, mut receiver) = socket.split();
     let (client_id, mut rx) = state.client_manager.add_client(stream_type);
 
@@ -131,27 +123,21 @@ async fn handle_websocket(
     state.client_manager.remove_client(client_id);
 }
 
-async fn example_json_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn example_json_handler(State(state): State<AppState>) -> impl IntoResponse {
     match state.cert_buffer.get_example() {
         Some(cert) => Json(cert).into_response(),
         None => Json(serde_json::json!({})).into_response(),
     }
 }
 
-async fn latest_json_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn latest_json_handler(State(state): State<AppState>) -> impl IntoResponse {
     let certificates = state.cert_buffer.get_latest();
     Json(serde_json::json!({
         "messages": certificates
     }))
 }
 
-async fn stats_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn stats_handler(State(state): State<AppState>) -> impl IntoResponse {
     let processed_certs = state.cert_buffer.get_processed_count();
     let clients = state.client_manager.get_clients_info();
 
@@ -166,6 +152,9 @@ async fn stats_handler(
 async fn index_handler() -> impl IntoResponse {
     match tokio::fs::read_to_string("frontend/dist/index.html").await {
         Ok(content) => Html(content).into_response(),
-        Err(_) => Html("<html><body><h1>CertStream Server</h1><p>Frontend not found</p></body></html>").into_response(),
+        Err(_) => {
+            Html("<html><body><h1>CertStream Server</h1><p>Frontend not found</p></body></html>")
+                .into_response()
+        }
     }
 }

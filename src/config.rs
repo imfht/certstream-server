@@ -7,6 +7,8 @@ pub const CERT_BUFFER_SIZE: usize = 25;
 pub const POBOX_BUFFER_SIZE: usize = 500;
 pub const CT_UPDATE_INTERVAL_SECS: u64 = 10;
 pub const MAX_CONCURRENT_FETCHES: usize = 5;
+pub const MAX_INIT_RETRIES: u32 = 5;
+pub const INIT_RETRY_DELAY_SECS: u64 = 30;
 
 pub fn get_port() -> u16 {
     std::env::var("PORT")
@@ -16,11 +18,9 @@ pub fn get_port() -> u16 {
 }
 
 pub fn get_user_agent() -> String {
-    std::env::var("USER_AGENT")
-        .unwrap_or_else(|_| DEFAULT_USER_AGENT.to_string())
+    std::env::var("USER_AGENT").unwrap_or_else(|_| DEFAULT_USER_AGENT.to_string())
 }
 
 pub fn get_stats_url() -> String {
-    std::env::var("STATS_URL")
-        .unwrap_or_else(|_| "stats".to_string())
+    std::env::var("STATS_URL").unwrap_or_else(|_| "stats".to_string())
 }

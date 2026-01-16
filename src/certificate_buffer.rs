@@ -1,8 +1,8 @@
 use crate::config::CERT_BUFFER_SIZE;
 use crate::types::*;
 use parking_lot::RwLock;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 pub struct CertificateBuffer {
     certificates: Arc<RwLock<Vec<CertificateUpdate>>>,
@@ -19,7 +19,8 @@ impl CertificateBuffer {
 
     pub async fn add_certificates(&self, certs: &[CertificateData]) {
         let cert_count = certs.len() as u64;
-        self.processed_count.fetch_add(cert_count, Ordering::Relaxed);
+        self.processed_count
+            .fetch_add(cert_count, Ordering::Relaxed);
 
         // Convert to CertificateUpdate without DER and chain
         let updates: Vec<CertificateUpdate> = certs
@@ -39,12 +40,12 @@ impl CertificateBuffer {
             .collect();
 
         let mut buffer = self.certificates.write();
-        
+
         // Add to front and keep only the latest CERT_BUFFER_SIZE
         for update in updates.into_iter().rev() {
             buffer.insert(0, update);
         }
-        
+
         if buffer.len() > CERT_BUFFER_SIZE {
             buffer.truncate(CERT_BUFFER_SIZE);
         }
