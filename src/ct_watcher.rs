@@ -34,7 +34,7 @@ pub async fn start_watchers(
                     log_list_retries += 1;
                     if log_list_retries >= MAX_INIT_RETRIES {
                         warn!(
-                            "Failed to parse CT log list after {} attempts: {}. Will keep retrying every {} seconds...",
+                            "Failed to parse CT log list after {} attempts: {}. Restarting retry cycle and continuing every {} seconds...",
                             MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
                         );
                         log_list_retries = 0;
@@ -50,7 +50,7 @@ pub async fn start_watchers(
                 log_list_retries += 1;
                 if log_list_retries >= MAX_INIT_RETRIES {
                     warn!(
-                        "Failed to fetch CT log list after {} attempts: {}. Will keep retrying every {} seconds...",
+                        "Failed to fetch CT log list after {} attempts: {}. Restarting retry cycle and continuing every {} seconds...",
                         MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
                     );
                     log_list_retries = 0;
@@ -152,7 +152,7 @@ async fn watch_ct_log(
                 retries += 1;
                 if retries >= MAX_INIT_RETRIES {
                     warn!(
-                        "Failed to get initial tree size for {} after {} retries: {}. Will keep retrying every {} seconds...",
+                        "Failed to get initial tree size for {} after {} retries: {}. Restarting retry cycle and continuing every {} seconds...",
                         url, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
                     );
                     retries = 0;
