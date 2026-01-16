@@ -42,13 +42,8 @@ pub async fn start_watchers(
                     let delay = rand::random::<f64>() * 3.0;
                     sleep(Duration::from_secs_f64(delay)).await;
 
-                    if let Err(e) = watch_ct_log(
-                        operator_name,
-                        log,
-                        client_manager,
-                        cert_buffer,
-                    )
-                    .await
+                    if let Err(e) =
+                        watch_ct_log(operator_name, log, client_manager, cert_buffer).await
                     {
                         error!("CT watcher error: {}", e);
                     }
@@ -106,15 +101,30 @@ async fn watch_ct_log(
         }
     }
 
-    // Get initial tree size
-    match get_tree_size(&client, &state).await {
-        Ok(size) => {
-            state.tree_size = size;
-            info!("Initial tree size for {}: {}", url, size);
-        }
-        Err(e) => {
-            warn!("Failed to get initial tree size for {}: {}", url, e);
-            return Err(e);
+    // Get initial tree size with retries
+    let mut retries = 0;
+    loop {
+        match get_tree_size(&client, &state).await {
+            Ok(size) => {
+                state.tree_size = size;
+                info!("Initial tree size for {}: {}", url, size);
+                break;
+            }
+            Err(e) => {
+                retries += 1;
+                if retries >= MAX_INIT_RETRIES {
+                    warn!(
+                        "Failed to get initial tree size for {} after {} retries: {}. Skipping this log.",
+                        url, MAX_INIT_RETRIES, e
+                    );
+                    return Err(e);
+                }
+                warn!(
+                    "Failed to get initial tree size for {} (attempt {}/{}): {}. Retrying in {} seconds...",
+                    url, retries, MAX_INIT_RETRIES, e, INIT_RETRY_DELAY_SECS
+                );
+                sleep(Duration::from_secs(INIT_RETRY_DELAY_SECS)).await;
+            }
         }
     }
 
@@ -142,14 +152,17 @@ async fn watch_ct_log(
                     )
                     .await
                     {
-                        error!("Error broadcasting updates: {}", e);
+                        error!("Error broadcasting updates from {}: {}", url, e);
                     }
 
                     state.tree_size = current_tree_size;
                 }
             }
             Err(e) => {
-                error!("Failed to get tree size for {}: {}", url, e);
+                warn!(
+                    "Failed to get tree size for {}: {}. Will retry on next poll.",
+                    url, e
+                );
             }
         }
     }
@@ -197,7 +210,7 @@ async fn broadcast_updates(
 
     // Process certificates in batches
     let chunks: Vec<_> = certificates.chunks(state.batch_size).collect();
-    
+
     // Use semaphore to limit concurrent requests
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES));
     let mut tasks = Vec::new();
@@ -313,7 +326,7 @@ async fn fetch_and_broadcast_certs(
             "Didn't retrieve all entries for this batch, fetching missing {} entries",
             batch_count - entry_count
         );
-        
+
         let remaining_ids = &ids[entry_count..];
         Box::pin(fetch_and_broadcast_certs(
             client,

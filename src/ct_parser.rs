@@ -86,7 +86,7 @@ fn parse_certificate(der_data: &[u8], is_leaf: bool) -> Result<LeafCertificate> 
 
     let subject = parse_subject(&cert.subject);
     let extensions = parse_extensions(&cert);
-    
+
     let not_before = cert.validity().not_before.timestamp() as f64;
     let not_after = cert.validity().not_after.timestamp() as f64;
 
@@ -114,7 +114,7 @@ fn parse_chain_certificate(der_data: &[u8]) -> Result<ChainCertificate> {
 
     let subject = parse_subject(&cert.subject);
     let extensions = parse_extensions(&cert);
-    
+
     let not_before = cert.validity().not_before.timestamp() as f64;
     let not_after = cert.validity().not_after.timestamp() as f64;
     let as_der = Some(BASE64.encode(der_data));
@@ -189,11 +189,17 @@ fn parse_subject(subject: &X509Name) -> Subject {
     let aggregated = format!(
         "{}{}{}{}{}{}",
         c.as_ref().map(|v| format!("/C={}", v)).unwrap_or_default(),
-        st.as_ref().map(|v| format!("/ST={}", v)).unwrap_or_default(),
+        st.as_ref()
+            .map(|v| format!("/ST={}", v))
+            .unwrap_or_default(),
         l.as_ref().map(|v| format!("/L={}", v)).unwrap_or_default(),
         o.as_ref().map(|v| format!("/O={}", v)).unwrap_or_default(),
-        ou.as_ref().map(|v| format!("/OU={}", v)).unwrap_or_default(),
-        cn.as_ref().map(|v| format!("/CN={}", v)).unwrap_or_default(),
+        ou.as_ref()
+            .map(|v| format!("/OU={}", v))
+            .unwrap_or_default(),
+        cn.as_ref()
+            .map(|v| format!("/CN={}", v))
+            .unwrap_or_default(),
     );
 
     Subject {
