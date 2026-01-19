@@ -110,6 +110,10 @@ fn normalize_log_url(url: &str) -> String {
     }
 }
 
+fn ct_api_url(base_url: &str, path: &str) -> String {
+    format!("{}{}", normalize_log_url(base_url), path)
+}
+
 async fn watch_ct_log(
     operator_name: String,
     log: CTLog,
@@ -235,7 +239,7 @@ mod tests {
 }
 
 async fn fetch_batch_size(client: &reqwest::Client, state: &CTLogState) -> Result<usize> {
-    let url = format!("{}ct/v1/get-entries?start=0&end=511", state.url);
+    let url = ct_api_url(&state.url, "ct/v1/get-entries?start=0&end=511");
 
     let response: CTLogEntries = client
         .get(&url)
@@ -249,7 +253,7 @@ async fn fetch_batch_size(client: &reqwest::Client, state: &CTLogState) -> Resul
 }
 
 async fn get_tree_size(client: &reqwest::Client, state: &CTLogState) -> Result<u64> {
-    let url = format!("{}ct/v1/get-sth", state.url);
+    let url = ct_api_url(&state.url, "ct/v1/get-sth");
 
     let response: CTTreeHead = client
         .get(&url)
@@ -332,7 +336,10 @@ async fn fetch_and_broadcast_certs(
 
     let start = ids[0];
     let end = ids[ids.len() - 1];
-    let url = format!("{}ct/v1/get-entries?start={}&end={}", state.url, start, end);
+    let url = ct_api_url(
+        &state.url,
+        &format!("ct/v1/get-entries?start={}&end={}", start, end),
+    );
 
     let response: CTLogEntries = match client
         .get(&url)
@@ -367,7 +374,9 @@ async fn fetch_and_broadcast_certs(
                     },
                     cert_link: Some(format!(
                         "{}ct/v1/get-entries?start={}&end={}",
-                        state.url, cert_index, cert_index
+                        normalize_log_url(&state.url),
+                        cert_index,
+                        cert_index
                     )),
                 };
 
