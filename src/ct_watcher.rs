@@ -120,7 +120,7 @@ async fn watch_ct_log(
     client_manager: Arc<ClientManager>,
     cert_buffer: Arc<CertificateBuffer>,
 ) -> Result<()> {
-    let url = normalize_log_url(&log.url);
+    let url = log.url.clone();
 
     info!("Starting watcher for {}", url);
 
@@ -372,11 +372,9 @@ async fn fetch_and_broadcast_certs(
                         url: state.url.clone(),
                         name: state.description.clone(),
                     },
-                    cert_link: Some(format!(
-                        "{}ct/v1/get-entries?start={}&end={}",
-                        normalize_log_url(&state.url),
-                        cert_index,
-                        cert_index
+                    cert_link: Some(ct_api_url(
+                        &state.url,
+                        &format!("ct/v1/get-entries?start={}&end={}", cert_index, cert_index),
                     )),
                 };
 
