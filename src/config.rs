@@ -21,6 +21,36 @@ pub fn get_user_agent() -> String {
     std::env::var("USER_AGENT").unwrap_or_else(|_| DEFAULT_USER_AGENT.to_string())
 }
 
+pub fn get_log_list_url() -> String {
+    std::env::var("CT_LOG_LIST_URL").unwrap_or_else(|_| CT_LOG_LIST_URL.to_string())
+}
+
 pub fn get_stats_url() -> String {
     std::env::var("STATS_URL").unwrap_or_else(|_| "stats".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn get_log_list_url_defaults() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("CT_LOG_LIST_URL");
+        assert_eq!(get_log_list_url(), CT_LOG_LIST_URL);
+    }
+
+    #[test]
+    fn get_log_list_url_overrides() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("CT_LOG_LIST_URL", "https://example.test/logs.json");
+        assert_eq!(
+            get_log_list_url(),
+            "https://example.test/logs.json".to_string()
+        );
+        std::env::remove_var("CT_LOG_LIST_URL");
+    }
 }

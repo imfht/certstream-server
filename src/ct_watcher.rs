@@ -19,11 +19,13 @@ pub async fn start_watchers(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
+    let log_list_url = get_log_list_url();
+    info!("Fetching CT log list from {}", log_list_url);
 
     let mut log_list_retries = 0;
     let log_list: CTLogList = loop {
         match client
-            .get(CT_LOG_LIST_URL)
+            .get(&log_list_url)
             .header("User-Agent", get_user_agent())
             .send()
             .await
