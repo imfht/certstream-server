@@ -102,17 +102,21 @@ pub async fn start_watchers(
     Ok(())
 }
 
+fn normalize_log_url(url: &str) -> String {
+    if url.ends_with('/') {
+        url.to_string()
+    } else {
+        format!("{}/", url)
+    }
+}
+
 async fn watch_ct_log(
     operator_name: String,
     log: CTLog,
     client_manager: Arc<ClientManager>,
     cert_buffer: Arc<CertificateBuffer>,
 ) -> Result<()> {
-    let url = if log.url.ends_with('/') {
-        log.url.trim_end_matches('/').to_string()
-    } else {
-        log.url.clone()
-    };
+    let url = normalize_log_url(&log.url);
 
     info!("Starting watcher for {}", url);
 
@@ -206,6 +210,27 @@ async fn watch_ct_log(
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_log_url;
+
+    #[test]
+    fn normalize_log_url_preserves_trailing_slash() {
+        assert_eq!(
+            normalize_log_url("https://example.test/log/"),
+            "https://example.test/log/"
+        );
+    }
+
+    #[test]
+    fn normalize_log_url_adds_trailing_slash() {
+        assert_eq!(
+            normalize_log_url("https://example.test/log"),
+            "https://example.test/log/"
+        );
     }
 }
 
