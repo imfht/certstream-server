@@ -19,11 +19,13 @@ pub async fn start_watchers(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
+    let log_list_url = get_log_list_url();
+    info!("Fetching CT log list from {}", log_list_url);
 
     let mut log_list_retries = 0;
     let log_list: CTLogList = loop {
         match client
-            .get(CT_LOG_LIST_URL)
+            .get(&log_list_url)
             .header("User-Agent", get_user_agent())
             .send()
             .await
@@ -100,17 +102,25 @@ pub async fn start_watchers(
     Ok(())
 }
 
+fn normalize_log_url(url: &str) -> String {
+    if url.ends_with('/') {
+        url.to_string()
+    } else {
+        format!("{}/", url)
+    }
+}
+
+fn ct_api_url(base_url: &str, path: &str) -> String {
+    format!("{}{}", normalize_log_url(base_url), path)
+}
+
 async fn watch_ct_log(
     operator_name: String,
     log: CTLog,
     client_manager: Arc<ClientManager>,
     cert_buffer: Arc<CertificateBuffer>,
 ) -> Result<()> {
-    let url = if log.url.ends_with('/') {
-        log.url.trim_end_matches('/').to_string()
-    } else {
-        log.url.clone()
-    };
+    let url = log.url.clone();
 
     info!("Starting watcher for {}", url);
 
@@ -207,8 +217,29 @@ async fn watch_ct_log(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::normalize_log_url;
+
+    #[test]
+    fn normalize_log_url_preserves_trailing_slash() {
+        assert_eq!(
+            normalize_log_url("https://example.test/log/"),
+            "https://example.test/log/"
+        );
+    }
+
+    #[test]
+    fn normalize_log_url_adds_trailing_slash() {
+        assert_eq!(
+            normalize_log_url("https://example.test/log"),
+            "https://example.test/log/"
+        );
+    }
+}
+
 async fn fetch_batch_size(client: &reqwest::Client, state: &CTLogState) -> Result<usize> {
-    let url = format!("{}ct/v1/get-entries?start=0&end=511", state.url);
+    let url = ct_api_url(&state.url, "ct/v1/get-entries?start=0&end=511");
 
     let response: CTLogEntries = client
         .get(&url)
@@ -222,7 +253,7 @@ async fn fetch_batch_size(client: &reqwest::Client, state: &CTLogState) -> Resul
 }
 
 async fn get_tree_size(client: &reqwest::Client, state: &CTLogState) -> Result<u64> {
-    let url = format!("{}ct/v1/get-sth", state.url);
+    let url = ct_api_url(&state.url, "ct/v1/get-sth");
 
     let response: CTTreeHead = client
         .get(&url)
@@ -301,80 +332,89 @@ async fn fetch_and_broadcast_certs(
         return Ok(());
     }
 
-    debug!("Attempting to retrieve {} entries", ids.len());
+    let mut start_index = 0;
 
-    let start = ids[0];
-    let end = ids[ids.len() - 1];
-    let url = format!("{}ct/v1/get-entries?start={}&end={}", state.url, start, end);
+    while start_index < ids.len() {
+        let batch_ids = &ids[start_index..];
 
-    let response: CTLogEntries = match client
-        .get(&url)
-        .header("User-Agent", get_user_agent())
-        .send()
-        .await
-    {
-        Ok(resp) => resp.json().await?,
-        Err(e) => {
-            error!("Failed to fetch entries from {}: {}", url, e);
-            return Err(e.into());
-        }
-    };
+        debug!("Attempting to retrieve {} entries", batch_ids.len());
 
-    let mut cert_updates = Vec::new();
-
-    for (entry, cert_index) in response.entries.iter().zip(ids.iter()) {
-        match parse_ct_entry(entry) {
-            Ok((leaf_cert, chain)) => {
-                // Convert to chain certificates for the chain
-                let chain_certs: Vec<ChainCertificate> = chain.into_iter().collect();
-
-                let cert_data = CertificateData {
-                    update_type: "X509LogEntry".to_string(),
-                    leaf_cert,
-                    chain: chain_certs,
-                    cert_index: *cert_index,
-                    seen: chrono::Utc::now().timestamp_micros() as f64 / 1_000_000.0,
-                    source: CertSource {
-                        url: state.url.clone(),
-                        name: state.description.clone(),
-                    },
-                    cert_link: Some(format!(
-                        "{}ct/v1/get-entries?start={}&end={}",
-                        state.url, cert_index, cert_index
-                    )),
-                };
-
-                cert_updates.push(cert_data);
-            }
-            Err(e) => {
-                debug!("Failed to parse certificate: {}", e);
-            }
-        }
-    }
-
-    // Broadcast to clients
-    client_manager.broadcast_certificates(&cert_updates).await;
-    cert_buffer.add_certificates(&cert_updates).await;
-
-    // Handle case where we got fewer entries than requested
-    let entry_count = response.entries.len();
-    let batch_count = ids.len();
-
-    if entry_count < batch_count {
-        debug!(
-            "Didn't retrieve all entries for this batch, fetching missing {} entries",
-            batch_count - entry_count
+        let start = batch_ids[0];
+        let end = batch_ids[batch_ids.len() - 1];
+        let url = ct_api_url(
+            &state.url,
+            &format!("ct/v1/get-entries?start={}&end={}", start, end),
         );
 
-        let remaining_ids = &ids[entry_count..];
-        Box::pin(fetch_and_broadcast_certs(
-            client,
-            state,
-            remaining_ids,
-            client_manager,
-            cert_buffer,
-        ))
-        .await?;
+        let response: CTLogEntries = match client
+            .get(&url)
+            .header("User-Agent", get_user_agent())
+            .send()
+            .await
+        {
+            Ok(resp) => resp.json().await?,
+            Err(e) => {
+                error!("Failed to fetch entries from {}: {}", url, e);
+                return Err(e.into());
+            }
+        };
+
+        let mut cert_updates = Vec::new();
+
+        for (entry, cert_index) in response.entries.iter().zip(batch_ids.iter()) {
+            match parse_ct_entry(entry) {
+                Ok((leaf_cert, chain)) => {
+                    // Convert to chain certificates for the chain
+                    let chain_certs: Vec<ChainCertificate> = chain.into_iter().collect();
+
+                    let cert_data = CertificateData {
+                        update_type: "X509LogEntry".to_string(),
+                        leaf_cert,
+                        chain: chain_certs,
+                        cert_index: *cert_index,
+                        seen: chrono::Utc::now().timestamp_micros() as f64 / 1_000_000.0,
+                        source: CertSource {
+                            url: state.url.clone(),
+                            name: state.description.clone(),
+                        },
+                        cert_link: Some(ct_api_url(
+                            &state.url,
+                            &format!("ct/v1/get-entries?start={}&end={}", cert_index, cert_index),
+                        )),
+                    };
+
+                    cert_updates.push(cert_data);
+                }
+                Err(e) => {
+                    debug!("Failed to parse certificate: {}", e);
+                }
+            }
+        }
+
+        // Broadcast to clients
+        client_manager.broadcast_certificates(&cert_updates).await;
+        cert_buffer.add_certificates(&cert_updates).await;
+
+        // Handle case where we got fewer entries than requested
+        let entry_count = response.entries.len();
+        let batch_count = batch_ids.len();
+
+        if entry_count == 0 {
+            warn!(
+                "Received empty response from {}, stopping batch to avoid infinite retry",
+                url
+            );
+            break;
+        }
+
+        if entry_count < batch_count {
+            debug!(
+                "Didn't retrieve all entries for this batch, fetching missing {} entries",
+                batch_count - entry_count
+            );
+        }
+
+        start_index += entry_count;
     }
 
     Ok(())

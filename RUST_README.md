@@ -77,6 +77,7 @@ Configure the server using environment variables:
 - `LOG_LEVEL` - Logging level: trace, debug, info, warn, error (default: info)
 - Logs are written to stdout/stderr. Increase `LOG_LEVEL` for more detail, and check for shutdown messages if the server stops unexpectedly.
 - `USER_AGENT` - Custom user agent for CT log requests (default: "Certstream Server v{VERSION}")
+- `CT_LOG_LIST_URL` - Override CT log list endpoint (default: https://www.gstatic.com/ct/log_list/v3/all_logs_list.json)
 - `STATS_URL` - Custom stats endpoint path (default: "stats")
 
 Example:
