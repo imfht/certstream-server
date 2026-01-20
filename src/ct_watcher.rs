@@ -332,83 +332,89 @@ async fn fetch_and_broadcast_certs(
         return Ok(());
     }
 
-    debug!("Attempting to retrieve {} entries", ids.len());
+    let mut start_index = 0;
 
-    let start = ids[0];
-    let end = ids[ids.len() - 1];
-    let url = ct_api_url(
-        &state.url,
-        &format!("ct/v1/get-entries?start={}&end={}", start, end),
-    );
+    while start_index < ids.len() {
+        let batch_ids = &ids[start_index..];
 
-    let response: CTLogEntries = match client
-        .get(&url)
-        .header("User-Agent", get_user_agent())
-        .send()
-        .await
-    {
-        Ok(resp) => resp.json().await?,
-        Err(e) => {
-            error!("Failed to fetch entries from {}: {}", url, e);
-            return Err(e.into());
-        }
-    };
+        debug!("Attempting to retrieve {} entries", batch_ids.len());
 
-    let mut cert_updates = Vec::new();
-
-    for (entry, cert_index) in response.entries.iter().zip(ids.iter()) {
-        match parse_ct_entry(entry) {
-            Ok((leaf_cert, chain)) => {
-                // Convert to chain certificates for the chain
-                let chain_certs: Vec<ChainCertificate> = chain.into_iter().collect();
-
-                let cert_data = CertificateData {
-                    update_type: "X509LogEntry".to_string(),
-                    leaf_cert,
-                    chain: chain_certs,
-                    cert_index: *cert_index,
-                    seen: chrono::Utc::now().timestamp_micros() as f64 / 1_000_000.0,
-                    source: CertSource {
-                        url: state.url.clone(),
-                        name: state.description.clone(),
-                    },
-                    cert_link: Some(ct_api_url(
-                        &state.url,
-                        &format!("ct/v1/get-entries?start={}&end={}", cert_index, cert_index),
-                    )),
-                };
-
-                cert_updates.push(cert_data);
-            }
-            Err(e) => {
-                debug!("Failed to parse certificate: {}", e);
-            }
-        }
-    }
-
-    // Broadcast to clients
-    client_manager.broadcast_certificates(&cert_updates).await;
-    cert_buffer.add_certificates(&cert_updates).await;
-
-    // Handle case where we got fewer entries than requested
-    let entry_count = response.entries.len();
-    let batch_count = ids.len();
-
-    if entry_count < batch_count {
-        debug!(
-            "Didn't retrieve all entries for this batch, fetching missing {} entries",
-            batch_count - entry_count
+        let start = batch_ids[0];
+        let end = batch_ids[batch_ids.len() - 1];
+        let url = ct_api_url(
+            &state.url,
+            &format!("ct/v1/get-entries?start={}&end={}", start, end),
         );
 
-        let remaining_ids = &ids[entry_count..];
-        Box::pin(fetch_and_broadcast_certs(
-            client,
-            state,
-            remaining_ids,
-            client_manager,
-            cert_buffer,
-        ))
-        .await?;
+        let response: CTLogEntries = match client
+            .get(&url)
+            .header("User-Agent", get_user_agent())
+            .send()
+            .await
+        {
+            Ok(resp) => resp.json().await?,
+            Err(e) => {
+                error!("Failed to fetch entries from {}: {}", url, e);
+                return Err(e.into());
+            }
+        };
+
+        let mut cert_updates = Vec::new();
+
+        for (entry, cert_index) in response.entries.iter().zip(batch_ids.iter()) {
+            match parse_ct_entry(entry) {
+                Ok((leaf_cert, chain)) => {
+                    // Convert to chain certificates for the chain
+                    let chain_certs: Vec<ChainCertificate> = chain.into_iter().collect();
+
+                    let cert_data = CertificateData {
+                        update_type: "X509LogEntry".to_string(),
+                        leaf_cert,
+                        chain: chain_certs,
+                        cert_index: *cert_index,
+                        seen: chrono::Utc::now().timestamp_micros() as f64 / 1_000_000.0,
+                        source: CertSource {
+                            url: state.url.clone(),
+                            name: state.description.clone(),
+                        },
+                        cert_link: Some(ct_api_url(
+                            &state.url,
+                            &format!("ct/v1/get-entries?start={}&end={}", cert_index, cert_index),
+                        )),
+                    };
+
+                    cert_updates.push(cert_data);
+                }
+                Err(e) => {
+                    debug!("Failed to parse certificate: {}", e);
+                }
+            }
+        }
+
+        // Broadcast to clients
+        client_manager.broadcast_certificates(&cert_updates).await;
+        cert_buffer.add_certificates(&cert_updates).await;
+
+        // Handle case where we got fewer entries than requested
+        let entry_count = response.entries.len();
+        let batch_count = batch_ids.len();
+
+        if entry_count == 0 {
+            warn!(
+                "Received empty response from {}, stopping batch to avoid infinite retry",
+                url
+            );
+            break;
+        }
+
+        if entry_count < batch_count {
+            debug!(
+                "Didn't retrieve all entries for this batch, fetching missing {} entries",
+                batch_count - entry_count
+            );
+        }
+
+        start_index += entry_count;
     }
 
     Ok(())
